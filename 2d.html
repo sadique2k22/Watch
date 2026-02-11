@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Magnetic Echo Watch - Unified Visibility</title>
+  <style>
+    body { margin: 0; background: #000; overflow: hidden; font-family: sans-serif; }
+    #ui { position: absolute; top: 15px; width: 100%; text-align: center; color: #00ffcc; letter-spacing: 5px; font-size: 10px; opacity: 0.5; pointer-events: none; }
+  </style>
+</head>
+<body>
+
+<div id="ui">MAGNETIC PARTICLE SYSTEM // UNIFIED VISIBILITY</div>
+
+<script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// --- INITIALIZATION ---
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+camera.position.set(0, 0, 10);
+
+// --- MATERIALS (Fine Magnetic Particles) ---
+const pMat = new THREE.PointsMaterial({
+  color: 0x00ffcc,
+  size: 0.012, 
+  transparent: true,
+  opacity: 0.85, // Fixed opacity for all particles
+  blending: THREE.AdditiveBlending,
+  depthTest: false,
+  depthWrite: false
+});
+
+const watchGroup = new THREE.Group();
+scene.add(watchGroup);
+
+// --- IMPROVED SAMPLER ---
+const canvas = document.createElement('canvas');
+const ctx = canvas.getContext('2d');
+canvas.width = 128;
+canvas.height = 128;
+
+const digitCache = {};
+function getMagneticDigit(text) {
+  if (digitCache[text]) return digitCache[text];
+
+  ctx.clearRect(0, 0, 128, 128);
+  ctx.fillStyle = 'white';
+  ctx.font = 'bold 44px Arial'; 
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, 64, 64);
+
+  const data = ctx.getImageData(0, 0, 128, 128).data;
+  const points = [];
+  for (let y = 0; y < 128; y += 2) {
+    for (let x = 0; x < 128; x += 2) {
+      if (data[(y * 128 + x) * 4] > 120) {
+        // Precise mapping
+        points.push({ x: (x - 64) / 105, y: (64 - y) / 105 });
+      }
+    }
+  }
+  digitCache[text] = points;
+  return points;
+}
+
+function createSystem(count, echoes) {
+  const systems = [];
+  for (let i = 0; i < echoes; i++) {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(count * 3), 3));
+    // All echoes now use the exact same material settings (full visibility)
+    const p = new THREE.Points(geo, pMat.clone());
+    watchGroup.add(p);
+    systems.push(p);
+  }
+  return systems;
+}
+
+// Config: Hour (4), Min (7), Sec (5)
+const hSys = createSystem(380, 4);
+const mSys = createSystem(380, 7);
+const sSys = createSystem(280, 5);
+
+// --- UPDATE LOGIC ---
+function update(systems, val, angleStep, rStep) {
+  const points = getMagneticDigit(String(Math.floor(val)).padStart(2, '0'));
+  const angle = (90 - (val * angleStep)) * (Math.PI / 180);
+
+  systems.forEach((sys, depth) => {
+    const pos = sys.geometry.attributes.position.array;
+    
+    // Starts from center (0.7 offset) + expansion
+    const r = 0.7 + (depth * rStep); 
+    
+    const centerX = Math.cos(angle) * r;
+    const centerY = Math.sin(angle) * r;
+
+    for (let i = 0; i < pos.length / 3; i++) {
+      const p = points[i % points.length] || { x: 0, y: 0 };
+      
+      // Magnetic Smooth Attraction
+      pos[i * 3] += (centerX + p.x - pos[i * 3]) * 0.18 + (Math.random() - 0.5) * 0.003;
+      pos[i * 3 + 1] += (centerY + p.y - pos[i * 3 + 1]) * 0.18 + (Math.random() - 0.5) * 0.003;
+      pos[i * 3 + 2] = 0;
+    }
+    sys.geometry.attributes.position.needsUpdate = true;
+  });
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  const d = new Date();
+  const ms = d.getMilliseconds();
+  const s = d.getSeconds() + ms/1000;
+  const m = d.getMinutes() + s/60;
+  const h = (d.getHours() % 12 || 12) + m/60;
+
+  // Clockwise hands starting from center-ish offset
+  update(hSys, h, 30, 0.55); 
+  update(mSys, m, 6, 0.45);  
+  update(sSys, s, 6, 0.50);  
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+// Minimalist outer frame
+watchGroup.add(new THREE.Mesh(
+  new THREE.TorusGeometry(4.6, 0.015, 16, 100), 
+  new THREE.MeshBasicMaterial({color: 0x111111})
+));
+
+animate();
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>
